@@ -66,13 +66,13 @@
     ]
   },
   "slurm": {
-    "job_name": "LLM_Eval",
-    "account": "",
+    "job_name": "LLM_Eval_ENS492",
+    "account": "cuda",
     "nodes": 1,
     "ntasks": 1,
     "cpus_per_task": 4,
-    "qos": "",
-    "partition": "",
+    "qos": "cuda",
+    "partition": "cuda",
     "nodelist": "",
     "exclude_nodes": "",
     "max_retries": 5,

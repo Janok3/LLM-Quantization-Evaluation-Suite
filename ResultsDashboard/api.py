@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """
-Flask API server for LLM Evaluation & Training Dashboard
-Automatically parses data and serves it via REST endpoints
+Results Dashboard API
+---------------------
+Flask-based REST API for serving LLM evaluation results and fine-tuning logs.
+Provides endpoints for data parsing, visualization data, and model downloads.
 """
 
 from flask import Flask, jsonify, send_from_directory, send_file, request

@@ -18,16 +18,20 @@ A professional toolkit for quantifying, evaluating, and visualizing the performa
   - Provides a visual breakdown of benchmark performance.
   - Place your results in `lm_eval_results/` and run the dashboard to visualize.
 
-## Setup & configuration
+## Setup & Configuration
 
-### 1. Configuration
-Modify `EvaluationEngine/config.json` to suit your environment:
-- **SLURM Settings**: Update `account`, `partition`, and `qos` to match your cluster credentials.
-- **Models & Tasks**: Define which models and benchmarks you wish to run.
+### 1. Configuration (`config.json`)
+The repository is **pre-configured for the ENS492 shared cluster**. 
+- **Internal Users**: Standard SLURM settings (`account`, `partition`, `qos`) are already set.
+- **External Users**: Please update the `slurm` object in `EvaluationEngine/config.json` with your specific credentials.
 
-### 2. Hugging Face Authentication
-The engine requires a Hugging Face token to load models. You can provide it in two ways:
-1.  **Environment Variable**: Set `export HF_TOKEN=your_token` in your shell.
+### 2. Environment Setup (`submit_quant_tests.sh`)
+- **Shared Cluster**: The script is set to automatically use the pre-installed virtualenv at `/cta/users/fastinference2/...`.
+- **Other Environments**: If the pre-configured venv is not found, the script will fallback to looking for a local `./venv` or `../venv`. 
+
+### 3. Hugging Face Authentication
+The engine requires a Hugging Face token to load models:
+1.  **Environment Variable**: Set `export HF_TOKEN=your_token` (Recommended).
 2.  **Config File**: Set the `token` field in `EvaluationEngine/config.json`.
 
 ### 3. Running Evaluations

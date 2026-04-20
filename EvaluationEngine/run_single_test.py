@@ -1,3 +1,16 @@
+#!/usr/bin/env python3
+"""
+LLM Evaluation Runner
+---------------------
+Orchestrates the evaluation of Large Language Models (LLMs) across different 
+quantization methods using both standard benchmarks and custom test suites.
+
+Supports:
+- lm_eval benchmarks
+- Custom domain-specific tests (OCR, Tool Detection, etc.)
+- SLURM-based parallel execution
+"""
+
 import os
 import subprocess
 import sys

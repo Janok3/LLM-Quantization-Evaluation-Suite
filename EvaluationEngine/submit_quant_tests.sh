@@ -1,5 +1,18 @@
 #!/bin/bash
 
+# ==============================================================================
+# LLM Evaluation SLURM Orchestrator
+# ------------------------------------------------------------------------------
+# Functionality:
+#   - Automated SLURM job array submission for quantization benchmarks.
+#   - "Manager Job" logic to handle long-running orchestration on login nodes.
+#   - Intelligent node blacklisting and retry system for cluster stability.
+#
+# Usage:
+#   ./submit_quant_tests.sh          # Submit to SLURM cluster
+#   ./submit_quant_tests.sh --local  # Run locally for debugging
+# ==============================================================================
+
 # Configuration
 CONFIG_FILE="config.json"
 BLACKLIST_FILE="failed_nodes.txt"
@@ -110,20 +123,39 @@ script = f"""#!/bin/bash
 #SBATCH --gres={slurm['gres']}
 set -euo pipefail
 
-echo "NODE_HOSTNAME: $(hostname)"
+# --- Environment Setup (Cluster Specific) ---
+# NOTE: The following lines are pre-configured for the ENS492 shared cluster.
+# External users: Please modify or comment these out for your own environment.
 
 module purge
 module load cuda/12.6 
+
 export CUDA_HOME=/usr/local/cuda-12.6
 export PATH=$CUDA_HOME/bin:$PATH
 export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
-source /cta/users/fastinference2/workfolder/FIXEDvenv/bin/activate
-# Unset memory variables to avoid conflict with srun (especially when running under a manager job)
+# Activation logic (Prefers the pre-configured cluster venv)
+CLUSTER_VENV="/cta/users/fastinference2/workfolder/FIXEDvenv/bin/activate"
+
+if [ -f "$CLUSTER_VENV" ]; then
+    source "$CLUSTER_VENV"
+elif [ -d "venv" ]; then
+    source venv/bin/activate
+elif [ -d "../venv" ]; then
+    source ../venv/bin/activate
+else
+    echo "⚠ Warning: Pre-configured cluster venv not found. Ensure dependencies are installed."
+fi
+
+# Unset memory variables to avoid conflict with srun
 unset SLURM_MEM_PER_CPU SLURM_MEM_PER_NODE SLURM_MEM_PER_GPU
+
 srun python -u run_single_test.py --config {os.environ['CONFIG_FILE']} --array_id $SLURM_ARRAY_TASK_ID
-deactivate
+
+if [[ "$VIRTUAL_ENV" != "" ]]; then
+    deactivate
+fi
 """
 print(script)
 PYEOF
