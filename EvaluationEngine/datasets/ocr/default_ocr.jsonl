@@ -1,0 +1,10 @@
+{"image": "images/simple_hello.png", "ground_truth": "Hello, World!", "category": "simple"}
+{"image": "images/simple_pangram.png", "ground_truth": "The quick brown fox jumps over the lazy dog.", "category": "simple"}
+{"image": "images/sentence_ml.png", "ground_truth": "Machine learning is a subset of artificial intelligence.", "category": "sentence"}
+{"image": "images/formula_einstein.png", "ground_truth": "E = mc^2", "category": "formula"}
+{"image": "images/document_invoice.png", "ground_truth": "Total: $1,234.56\nDate: 2026-01-15\nVendor: Acme Corp", "category": "document"}
+{"image": "images/document_release.png", "ground_truth": "Python 3.12\nRelease Date: October 2023\nPEP 695: Type Parameter Syntax", "category": "document"}
+{"image": "images/table_items.png", "ground_truth": "Item        Qty    Price\nWidget A     10    $5.00\nWidget B      5   $12.50\nTotal:       15   $112.50", "category": "table"}
+{"image": "images/characters_alphabet.png", "ground_truth": "ABCDEFGHIJKLMNOPQRSTUVWXYZ\nabcdefghijklmnopqrstuvwxyz\n0123456789", "category": "characters"}
+{"image": "images/paragraph_lorem.png", "ground_truth": "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.", "category": "paragraph"}
+{"image": "images/code_fibonacci.png", "ground_truth": "def fibonacci(n):\n    if n <= 1:\n        return n\n    return fibonacci(n-1) + fibonacci(n-2)", "category": "code"}

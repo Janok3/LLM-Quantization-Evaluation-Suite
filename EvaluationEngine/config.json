@@ -1,0 +1,87 @@
+{
+  "model": {
+    "id": "tiiuae/Falcon-H1-Tiny-90M-Base",
+    "trust_remote_code": true,
+    "device_map": "auto"
+  },
+  "evaluation": {
+    "num_fewshot": 4,
+    "batch_size": 8,
+    "output_dir": "lm_eval_results"
+  },
+  "quantization": {
+    "methods": [
+      "base",
+      "int8",
+      "int4"
+    ]
+  },
+  "tasks": [
+    "wikitext",
+    "arc_challenge",
+    "truthfulqa_mc2",
+    "gsm8k",
+    "gsm8k_tr",
+    "hendrycks_math"
+  ],
+  "custom_tests": {
+    "enabled": true,
+    "test_dir": "custom_tests",
+    "tests": [
+      {
+        "name": "perplexity_custom",
+        "script": "perplexity_test.py",
+        "description": "Custom perplexity evaluation on WikiText-2"
+      },
+      {
+        "name": "throughput_custom",
+        "script": "throughput_test.py",
+        "description": "Generation throughput and latency benchmark",
+        "dataset": "datasets/default_throughput.jsonl"
+      },
+      {
+        "name": "coherence_custom",
+        "script": "coherence_test.py",
+        "description": "Semantic coherence evaluation via cosine similarity",
+        "dataset": "datasets/default_coherence.jsonl"
+      },
+      {
+        "name": "accuracy_custom",
+        "script": "accuracy_test.py",
+        "description": "Q&A accuracy evaluation against expected answers",
+        "dataset": "datasets/default_qa.jsonl"
+      },
+      {
+        "name": "ocr_custom",
+        "script": "ocr_test.py",
+        "description": "OCR evaluation using a vision-language model",
+        "model_id": "Qwen/Qwen2-VL-7B-Instruct",
+        "dataset": "datasets/ocr/default_ocr.jsonl"
+      },
+      {
+        "name": "tool_calling",
+        "script": "tool_calling_test.py",
+        "description": "Simple tool-calling evaluation for small models"
+      }
+    ]
+  },
+  "slurm": {
+    "job_name": "LLM_Eval",
+    "account": "",
+    "nodes": 1,
+    "ntasks": 1,
+    "cpus_per_task": 4,
+    "qos": "",
+    "partition": "",
+    "nodelist": "",
+    "exclude_nodes": "",
+    "max_retries": 5,
+    "auto_exclude": true,
+    "time": "08:00:00",
+    "gres": "gpu:1",
+    "log_dir": "logs"
+  },
+  "huggingface": {
+    "token": "YOUR_HF_TOKEN_HERE"
+  }
+}

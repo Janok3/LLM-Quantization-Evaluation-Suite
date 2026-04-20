@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LLM Evaluation & Training Dashboard</title>
+    <meta name="description" content="Analyze quantization impact and monitor fine-tuning progress">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <div class="header-content">
+                <h1 class="title">
+                    <span class="title-icon">⚡</span>
+                    LLM Evaluation & Training Dashboard
+                </h1>
+                <p class="subtitle">Analyze quantization effects and monitor fine-tuning progress</p>
+            </div>
+        </header>
+
+        <div class="tabs-container" id="tabsContainer" style="display: none;">
+            <button class="tab-btn active" onclick="switchTab(event, 'dashboard')">
+                <span class="section-icon">📊</span> Eval Dashboard
+            </button>
+            <button class="tab-btn" onclick="switchTab(event, 'train')">
+                <span class="section-icon">📈</span> Training Logs
+            </button>
+        </div>
+
+        <div class="loading-section" id="loadingSection">
+            <div class="loading-spinner"></div>
+            <p class="loading-text">Loading dashboard data...</p>
+        </div>
+
+        <div class="error-section" id="errorSection" style="display: none;">
+            <div class="error-icon">⚠️</div>
+            <h2>Notice</h2>
+            <p id="errorMessage"></p>
+        </div>
+
+        <main class="dashboard tab-content active" id="dashboard" style="display: none;">
+            <section class="model-selector-section">
+                <div class="selector-card">
+                    <h2><span class="section-icon">🤖</span> Select Model</h2>
+                    <div id="modelToggle" class="model-toggle"></div>
+                </div>
+            </section>
+
+            <section class="model-selector-section" id="runSelectorSection" style="display: none;">
+                <div class="selector-card">
+                    <h2><span class="section-icon">⏱️</span> Select Evaluation Run</h2>
+                    <div id="runToggle" class="model-toggle"></div>
+                </div>
+            </section>
+
+            <section class="chart-section">
+                <div class="chart-card large">
+                    <h3><span class="section-icon">📊</span> Quantization Impact Across Tasks</h3>
+                    <canvas id="quantizationImpactChart"></canvas>
+                </div>
+            </section>
+
+            <section class="chart-section">
+                <div class="chart-card">
+                    <h3><span class="section-icon">📉</span> INT8 Task Sensitivity</h3>
+                    <canvas id="sensitivityInt8Chart"></canvas>
+                </div>
+                <div class="chart-card">
+                    <h3><span class="section-icon">🎯</span> INT4 Task Sensitivity</h3>
+                    <canvas id="sensitivityInt4Chart"></canvas>
+                </div>
+            </section>
+
+            <section class="table-section">
+                <div class="table-card">
+                    <div class="table-header">
+                        <h3><span class="section-icon">📋</span> Detailed Performance Data</h3>
+                        <div class="table-controls">
+                            <input type="text" id="searchInput" placeholder="Search tasks..." class="search-input">
+                            <select id="quantFilter" class="filter-select">
+                                <option value="">All Quantizations</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="table-wrapper">
+                        <table class="data-table" id="dataTable">
+                            <thead>
+                                <tr>
+                                    <th data-sort="task_key">Task <span class="sort-icon">↕</span></th>
+                                    <th data-sort="base">Base <span class="sort-icon">↕</span></th>
+                                    <th data-sort="int8">INT8 <span class="sort-icon">↕</span></th>
+                                    <th data-sort="int8_drop">INT8 Drop <span class="sort-icon">↕</span></th>
+                                    <th data-sort="int4">INT4 <span class="sort-icon">↕</span></th>
+                                    <th data-sort="int4_drop">INT4 Drop <span class="sort-icon">↕</span></th>
+                                </tr>
+                            </thead>
+                            <tbody id="tableBody"></tbody>
+                        </table>
+                    </div>
+                    <div class="table-footer">
+                        <div class="row-count" id="rowCount">Showing 0 rows</div>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <main class="dashboard tab-content" id="trainDashboard" style="display: none;">
+            
+            <section class="model-selector-section">
+                <div class="selector-card">
+                    <h2><span class="section-icon">📜</span> Select Training Log</h2>
+                    <div id="finetuneToggle" class="model-toggle"></div>
+                </div>
+            </section>
+
+            <div id="trainDashboardContent">
+                <section class="chart-section" style="margin-bottom: var(--spacing-lg); display: flex; gap: var(--spacing-md); flex-wrap: wrap;">
+                    <div class="insight-card success" style="flex: 1; min-width: 250px;">
+                        <div style="display: flex; align-items: center; gap: 1rem;">
+                            <div class="insight-icon">✅</div>
+                            <div>
+                                <div class="insight-label" id="currentJobStatus">Loading...</div>
+                                <div class="insight-value" style="font-size: 1.5rem;">Completed</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="insight-card" style="flex: 1; min-width: 250px;">
+                        <div style="display: flex; align-items: center; gap: 1rem;">
+                            <div class="insight-icon">🏆</div>
+                            <div>
+                                <div class="insight-label">Best Eval Loss</div>
+                                <div class="insight-value" style="font-size: 1.5rem; line-height: 1.2;" id="bestEvalValue">Loading...</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="insight-card" style="flex: 1.5; min-width: 300px; display: flex; flex-direction: column; justify-content: center;">
+                        <div class="insight-label" style="margin-bottom: 0.5rem;">Download Weights</div>
+                        <div style="display: flex; gap: 0.5rem; width: 100%;">
+                            <select id="checkpointSelect" class="filter-select" style="flex: 1; border-color: var(--border-color); background: var(--bg-tertiary);">
+                            </select>
+                            <button class="btn btn-primary" onclick="downloadSelectedCheckpoint()" style="padding: 0.5rem 1rem;">
+                                <span>💾 Download</span>
+                            </button>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="chart-section">
+                    <div class="chart-card large">
+                        <h3><span class="section-icon">📉</span> Training & Evaluation Loss</h3>
+                        <canvas id="trainLossChart"></canvas>
+                    </div>
+                </section>
+
+                <section class="table-section">
+                    <div class="table-card">
+                        <div class="table-header">
+                            <h3><span class="section-icon">💻</span> Output Console</h3>
+                        </div>
+                        <div class="terminal-container" id="logTerminal"></div>
+                    </div>
+                </section>
+            </div>
+        </main>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

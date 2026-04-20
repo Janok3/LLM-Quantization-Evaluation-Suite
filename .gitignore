@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+env/
+
+# Logs and results
+logs/
+lm_eval_results/
+failed_nodes.txt
+.tasks_to_run
+
+# OS
+.DS_Store
+Thumbs.db
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# Models (if downloaded)
+download_model/
+finetunes/
