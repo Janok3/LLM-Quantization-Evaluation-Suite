@@ -256,6 +256,7 @@ def main():
             custom_tests
         )
         prefix = "[Custom]" if is_custom else "[lm_eval]"
+        print(f"NODE_HOSTNAME: {os.uname().nodename}")
         print(f"Array ID: {args.array_id} → {prefix} Method: {quant_method}, Task: {task_name}")
         
         if is_custom:

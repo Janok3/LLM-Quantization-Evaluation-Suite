@@ -151,6 +151,7 @@ fi
 # Unset memory variables to avoid conflict with srun
 unset SLURM_MEM_PER_CPU SLURM_MEM_PER_NODE SLURM_MEM_PER_GPU
 
+echo "NODE_HOSTNAME: $(hostname)"
 srun python -u run_single_test.py --config {os.environ['CONFIG_FILE']} --array_id $SLURM_ARRAY_TASK_ID
 
 if [[ "$VIRTUAL_ENV" != "" ]]; then

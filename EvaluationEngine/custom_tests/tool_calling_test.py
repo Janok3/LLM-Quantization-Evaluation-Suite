@@ -64,6 +64,7 @@ def run_eval(args):
     for case in test_cases:
         prompt = format_prompt(case["prompt"])
         inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
+        inputs.pop("token_type_ids", None)
         
         with torch.no_grad():
             outputs = model.generate(
