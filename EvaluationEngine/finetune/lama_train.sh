@@ -17,7 +17,7 @@ set -euo pipefail
 MODEL_ID="Qwen/Qwen3.5-4B"
 
 # PLEASE USE A NEW TOKEN HERE
-export HF_TOKEN="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"
+export HF_TOKEN=""
 
 # Environment
 module purge
