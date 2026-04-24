@@ -33,6 +33,30 @@ cd ResultsDashboard && ./run_dashboard.sh
 
 ---
 
+## Installation
+
+```bash
+# Create and activate virtual environment
+python -m venv venv
+source venv/bin/activate
+
+# Install core dependencies
+pip install torch --index-url https://download.pytorch.org/whl/cu124
+pip install transformers accelerate bitsandbytes huggingface_hub
+pip install lm-eval datasets
+
+# Install fine-tuning dependencies
+pip install trl peft
+
+# Install dashboard dependencies
+pip install flask flask-cors pandas
+
+# Install custom test dependencies
+pip install Pillow sentence-transformers
+```
+
+---
+
 ## Configuration
 
 All settings are in `EvaluationEngine/config.json`.
