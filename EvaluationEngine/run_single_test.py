@@ -129,6 +129,9 @@ def run_eval_command(config, quant_method, task_name):
         "--batch_size", str(config['evaluation']['batch_size']),
         "--output_path", output_dir_name
     ]
+
+    if config['evaluation'].get('log_samples', False):
+        command_list.append("--log_samples")
     
     try:
         subprocess.run(command_list, check=True)

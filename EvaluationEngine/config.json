@@ -7,7 +7,8 @@
   "evaluation": {
     "num_fewshot": 4,
     "batch_size": 8,
-    "output_dir": "lm_eval_results"
+    "output_dir": "lm_eval_results",
+    "log_samples": true
   },
   "quantization": {
     "methods": [

@@ -5,6 +5,10 @@ let currentIteration = 0; // 0 is the latest run
 let availableModels = [];
 let iterationsByModel = {}; // { modelName: maxIterations }
 
+let detailedResults = {};
+let currentDetailedModel = null;
+let currentTestType = null;
+
 let availableFinetunes = [];
 let currentFinetune = null;
 
@@ -32,7 +36,7 @@ function switchTab(event, tabId) {
         content.style.display = 'none';
     });
 
-    const targetId = tabId === 'dashboard' ? 'dashboard' : 'trainDashboard';
+    const targetId = tabId === 'dashboard' ? 'dashboard' : tabId === 'detailed' ? 'detailedDashboard' : 'trainDashboard';
     const targetEl = document.getElementById(targetId);
     if (targetEl) {
         targetEl.classList.add('active');
@@ -40,6 +44,10 @@ function switchTab(event, tabId) {
     }
 
     document.getElementById('errorSection').style.display = 'none';
+
+    if (tabId === 'detailed') {
+        initDetailedDashboard();
+    }
 
     if (tabId === 'train' && availableFinetunes.length === 0) {
         loadFinetuneList();
@@ -65,8 +73,14 @@ async function loadData() {
         const result = await response.json();
         allData = result.data || [];
 
-        // Group data to determine iterations per model
-        iterationsByModel = {};
+        const detailedResponse = await fetch(`${API_BASE}/detailed-results`);
+        if (detailedResponse.ok) {
+            const detailedResult = await detailedResponse.json();
+            if (detailedResult.success) {
+                detailedResults = detailedResult.data;
+            }
+        }
+
         const models = [...new Set(allData.map(row => row.model))];
 
         models.forEach(model => {
@@ -78,7 +92,6 @@ async function loadData() {
                 groups[key]++;
             });
 
-            // Iterations for this model is the max number of times any (task, quant) was run
             const counts = Object.values(groups);
             iterationsByModel[model] = counts.length > 0 ? Math.max(...counts) : 0;
         });
@@ -96,6 +109,7 @@ async function loadData() {
         }
 
         currentModel = availableModels[0];
+        currentDetailedModel = availableModels[0];
         initializeDashboard();
         hideLoading();
 
@@ -104,6 +118,403 @@ async function loadData() {
         showError(`Network Error: Ensure Flask API is running (${error.message})`);
     }
 }
+
+// ===== Detailed Question Analysis =====
+
+const TEST_TYPE_LABELS = {
+    'accuracy_custom': 'Q&A Accuracy',
+    'coherence_custom': 'Coherence',
+    'tool_calling': 'Tool Calling',
+    'ocr_custom': 'OCR',
+    'gsm8k': 'GSM8K',
+    'gsm8k_tr': 'GSM8K (Trace Reasoning)',
+    'arc_challenge': 'ARC Challenge',
+    'truthfulqa_mc2': 'TruthfulQA',
+    'hendrycks_math': 'Hendrycks Math',
+    'wikitext': 'WikiText'
+};
+
+const LM_EVAL_TASKS = new Set(['gsm8k', 'gsm8k_tr', 'arc_challenge', 'truthfulqa_mc2', 'hendrycks_math', 'wikitext']);
+
+let detailedPage = 1;
+let detailedTotalPages = 1;
+const detailedPageSize = 50;
+
+function initDetailedDashboard() {
+    createDetailedModelToggle();
+    updateDetailedView();
+}
+
+function createDetailedModelToggle() {
+    const container = document.getElementById('detailedModelToggle');
+    if (!container) return;
+    container.innerHTML = '';
+
+    availableModels.forEach(model => {
+        const button = document.createElement('button');
+        button.className = 'model-toggle-btn';
+        button.textContent = model;
+
+        if (model === currentDetailedModel) button.classList.add('active');
+
+        button.addEventListener('click', () => {
+            currentDetailedModel = model;
+            currentTestType = null;
+            document.querySelectorAll('#detailedModelToggle .model-toggle-btn').forEach(btn => btn.classList.remove('active'));
+            button.classList.add('active');
+            updateDetailedView();
+        });
+
+        container.appendChild(button);
+    });
+}
+
+function updateDetailedView() {
+    if (!currentDetailedModel) return;
+
+    createTestTypeToggle();
+    renderDetailedTable();
+}
+
+function createTestTypeToggle() {
+    const container = document.getElementById('testTypeToggle');
+    if (!container) return;
+    container.innerHTML = '';
+
+    const modelTests = detailedResults[currentDetailedModel] || {};
+    const testTypes = Object.keys(modelTests);
+
+    if (testTypes.length === 0) {
+        container.innerHTML = '<p class="detailed-no-data"><span class="icon">📭</span>No detailed results available for this model. Run custom tests to see per-question data.</p>';
+        currentTestType = null;
+        return;
+    }
+
+    if (currentTestType === null || !testTypes.includes(currentTestType)) {
+        currentTestType = testTypes[0];
+    }
+
+    testTypes.forEach(testType => {
+        const button = document.createElement('button');
+        button.className = 'model-toggle-btn';
+        button.textContent = TEST_TYPE_LABELS[testType] || testType;
+
+        if (testType === currentTestType) button.classList.add('active');
+
+        button.addEventListener('click', () => {
+            currentTestType = testType;
+            document.querySelectorAll('#testTypeToggle .model-toggle-btn').forEach(btn => btn.classList.remove('active'));
+            button.classList.add('active');
+            renderDetailedTable();
+        });
+
+        container.appendChild(button);
+    });
+}
+
+function renderDetailedTable(resetPage) {
+    const thead = document.getElementById('detailedTableHead');
+    const tbody = document.getElementById('detailedTableBody');
+    const rowcount = document.getElementById('detailedRowCount');
+
+    if (!thead || !tbody) return;
+
+    if (resetPage === undefined || resetPage) {
+        detailedPage = 1;
+    }
+
+    if (!currentDetailedModel || !currentTestType) {
+        thead.innerHTML = '';
+        tbody.innerHTML = '<tr><td class="detailed-no-data" colspan="10">Select a test type above</td></tr>';
+        rowcount.textContent = 'Showing 0 rows';
+        updatePaginationControls(1);
+        return;
+    }
+
+    const modelTests = detailedResults[currentDetailedModel] || {};
+    const items = modelTests[currentTestType] || {};
+    const itemKeys = Object.keys(items);
+
+    if (itemKeys.length === 0) {
+        thead.innerHTML = '';
+        tbody.innerHTML = '<tr><td class="detailed-no-data" colspan="10">No items found</td></tr>';
+        rowcount.textContent = 'Showing 0 rows';
+        updatePaginationControls(1);
+        return;
+    }
+
+    const { columns, rows } = buildDetailedRows(itemKeys, items, currentTestType);
+
+    thead.innerHTML = `<tr>${columns.map(c => `<th>${c.label}</th>`).join('')}</tr>`;
+
+    const searchTerm = document.getElementById('detailedSearchInput')?.value.toLowerCase() || '';
+    const diffOnly = document.getElementById('diffOnlyFilter')?.checked || false;
+
+    let filtered = rows.filter(row => {
+        const matchesSearch = !searchTerm || row._searchText.toLowerCase().includes(searchTerm);
+        const matchesDiff = !diffOnly || row._hasDiff;
+        return matchesSearch && matchesDiff;
+    });
+
+    const totalPages = Math.max(1, Math.ceil(filtered.length / detailedPageSize));
+    if (detailedPage > totalPages) detailedPage = totalPages;
+
+    const startIdx = (detailedPage - 1) * detailedPageSize;
+    const endIdx = startIdx + detailedPageSize;
+    const paged = filtered.slice(startIdx, endIdx);
+
+    tbody.innerHTML = '';
+    paged.forEach(row => {
+        const tr = document.createElement('tr');
+        if (row._hasDiff) tr.classList.add('row-has-diff');
+
+        tr.innerHTML = columns.map(col => {
+            if (col.type === 'answer') {
+                return `<td class="answer-cell" title="${escapeHtml(row[col.key] || 'No result')}">${escapeHtml(truncate(row[col.key] || 'No result', 80))}</td>`;
+            }
+            if (col.type === 'badge') {
+                return `<td>${row[col.key]}</td>`;
+            }
+            if (col.type === 'metric') {
+                return `<td><span class="detailed-metric">${escapeHtml(String(row[col.key] || '-'))}</span></td>`;
+            }
+            return `<td>${escapeHtml(String(row[col.key] || '-'))}</td>`;
+        }).join('');
+
+        tbody.appendChild(tr);
+    });
+
+    rowcount.textContent = `Showing ${startIdx + 1}–${Math.min(endIdx, filtered.length)} of ${filtered.length} items`;
+    updatePaginationControls(totalPages);
+}
+
+function updatePaginationControls(totalPages) {
+    const prevBtn = document.getElementById('prevPageBtn');
+    const nextBtn = document.getElementById('nextPageBtn');
+    const info = document.getElementById('pageInfo');
+    detailedTotalPages = totalPages;
+    if (!prevBtn || !nextBtn || !info) return;
+    prevBtn.disabled = detailedPage <= 1;
+    nextBtn.disabled = detailedPage >= totalPages;
+    info.textContent = `Page ${detailedPage} of ${totalPages}`;
+}
+
+function detailedPrevPage() {
+    if (detailedPage > 1) {
+        detailedPage--;
+        renderDetailedTable(false);
+    }
+}
+
+function detailedNextPage() {
+    if (detailedPage < detailedTotalPages) {
+        detailedPage++;
+        renderDetailedTable(false);
+    }
+}
+
+function buildDetailedRows(itemKeys, items, testType) {
+    const quants = ['base', 'int8', 'int4'];
+
+    if (testType === 'accuracy_custom') {
+        const columns = [
+            { label: 'Question', key: '_question', type: 'text' },
+            { label: 'Expected', key: '_expected', type: 'text' },
+            { label: 'Base Answer', key: 'base_answer', type: 'answer' },
+            { label: 'INT8 Answer', key: 'int8_answer', type: 'answer' },
+            { label: 'INT4 Answer', key: 'int4_answer', type: 'answer' },
+        ];
+
+        const rows = itemKeys.map(itemKey => {
+            const itemData = items[itemKey];
+            const row = { _question: itemKey, _expected: '', _searchText: itemKey, _hasDiff: false };
+
+            let hasAnswers = {};
+            quants.forEach(q => {
+                const qd = itemData[q];
+                if (qd) {
+                    row[`${q}_answer`] = qd.model_answer || '';
+                    row[`_expected`] = qd.expected_answer || '';
+                    hasAnswers[q] = true;
+                    row._searchText += ' ' + (qd.model_answer || '') + ' ' + (qd.expected_answer || '');
+                } else {
+                    row[`${q}_answer`] = '';
+                }
+            });
+
+            const answers = quants.filter(q => hasAnswers[q]).map(q => row[`${q}_answer`]);
+            row._hasDiff = answers.length >= 2 && !allEqual(answers);
+
+            const badgeCells = {};
+            quants.forEach(q => {
+                const qd = itemData[q];
+                if (qd) {
+                    if (qd.exact_match === true) {
+                        badgeCells[`${q}_badge`] = `<span class="answer-badge badge-correct">✓ Exact</span>`;
+                    } else if (qd.contains_match === true) {
+                        badgeCells[`${q}_badge`] = `<span class="answer-badge badge-partial">~ Contains</span>`;
+                    } else {
+                        badgeCells[`${q}_badge`] = `<span class="answer-badge badge-wrong">✗ Wrong</span>`;
+                    }
+                }
+            });
+
+            Object.assign(row, badgeCells);
+            return row;
+        });
+
+        return { columns, rows };
+    }
+
+    if (testType === 'coherence_custom') {
+        const columns = [
+            { label: 'Prompt ID', key: '_prompt_id', type: 'text' },
+            { label: 'Domain', key: '_domain', type: 'text' },
+            { label: 'Base Score', key: 'base_sim', type: 'metric' },
+            { label: 'INT8 Score', key: 'int8_sim', type: 'metric' },
+            { label: 'INT4 Score', key: 'int4_sim', type: 'metric' },
+            { label: 'Base Preview', key: 'base_preview', type: 'answer' },
+            { label: 'INT8 Preview', key: 'int8_preview', type: 'answer' },
+            { label: 'INT4 Preview', key: 'int4_preview', type: 'answer' },
+        ];
+
+        const rows = itemKeys.map(itemKey => {
+            const itemData = items[itemKey];
+            const row = { _prompt_id: itemKey, _domain: '', _searchText: itemKey, _hasDiff: false };
+
+            let sims = [];
+            quants.forEach(q => {
+                const qd = itemData[q];
+                if (qd) {
+                    row[`${q}_sim`] = qd.cosine_similarity !== undefined ? qd.cosine_similarity.toFixed(4) : '-';
+                    row[`${q}_preview`] = qd.generated_preview || '';
+                    row[`_domain`] = qd.domain || '';
+                    sims.push(qd.cosine_similarity);
+                    row._searchText += ' ' + (qd.generated_preview || '');
+                } else {
+                    row[`${q}_sim`] = '-';
+                    row[`${q}_preview`] = '';
+                }
+            });
+
+            const validSims = sims.filter(s => s !== undefined && s !== null);
+            row._hasDiff = validSims.length >= 2 && !allEqual(validSims.map(s => parseFloat(s.toFixed(3))));
+
+            return row;
+        });
+
+        return { columns, rows };
+    }
+
+    if (testType === 'tool_calling') {
+        const columns = [
+            { label: 'Prompt', key: '_prompt', type: 'text' },
+            { label: 'Expected Tool', key: '_expected', type: 'text' },
+            { label: 'Base Response', key: 'base_resp', type: 'answer' },
+            { label: 'INT8 Response', key: 'int8_resp', type: 'answer' },
+            { label: 'INT4 Response', key: 'int4_resp', type: 'answer' },
+        ];
+
+        const rows = itemKeys.map(itemKey => {
+            const itemData = items[itemKey];
+            const row = { _prompt: itemKey, _expected: '', _searchText: itemKey, _hasDiff: false };
+
+            let responses = {};
+            quants.forEach(q => {
+                const qd = itemData[q];
+                if (qd) {
+                    row[`${q}_resp`] = qd.generated || '';
+                    row[`_expected`] = qd.expected || '';
+                    responses[q] = qd.generated || '';
+                    row._searchText += ' ' + (qd.generated || '') + ' ' + (qd.expected || '');
+                } else {
+                    row[`${q}_resp`] = '';
+                }
+            });
+
+            const respValues = Object.values(responses);
+            row._hasDiff = respValues.length >= 2 && !allEqual(respValues);
+
+            return row;
+        });
+
+        return { columns, rows };
+    }
+
+    if (testType === 'ocr_custom') {
+        const columns = [
+            { label: 'Image', key: '_image', type: 'text' },
+            { label: 'Category', key: '_category', type: 'text' },
+            { label: 'Question', key: '_question', type: 'text' },
+            { label: 'Ground Truth', key: '_gt', type: 'text' },
+            { label: 'Base Response', key: 'base_resp', type: 'answer' },
+            { label: 'INT8 Response', key: 'int8_resp', type: 'answer' },
+            { label: 'INT4 Response', key: 'int4_resp', type: 'answer' },
+            { label: 'Base Sim', key: 'base_sim', type: 'metric' },
+            { label: 'INT8 Sim', key: 'int8_sim', type: 'metric' },
+            { label: 'INT4 Sim', key: 'int4_sim', type: 'metric' },
+        ];
+
+        const rows = itemKeys.map(itemKey => {
+            const itemData = items[itemKey];
+            const row = {
+                _image: itemKey,
+                _category: '',
+                _question: '',
+                _gt: '',
+                _searchText: itemKey,
+                _hasDiff: false
+            };
+
+            let responses = {};
+            quants.forEach(q => {
+                const qd = itemData[q];
+                if (qd) {
+                    row[`${q}_resp`] = qd.model_response || '';
+                    row[`${q}_sim`] = qd.similarity !== undefined ? qd.similarity.toFixed(4) : '-';
+                    row[`_category`] = qd.category || '';
+                    row[`_question`] = qd.question || '';
+                    row[`_gt`] = qd.ground_truth || '';
+                    responses[q] = qd.model_response || '';
+                    row._searchText += ' ' + (qd.model_response || '') + ' ' + (qd.ground_truth || '') + ' ' + (qd.question || '');
+                } else {
+                    row[`${q}_resp`] = '';
+                    row[`${q}_sim`] = '-';
+                }
+            });
+
+            const respValues = Object.values(responses);
+            row._hasDiff = respValues.length >= 2 && !allEqual(respValues);
+
+            return row;
+        });
+
+        return { columns, rows };
+    }
+
+    return { columns: [], rows: [] };
+}
+
+// ===== Helpers =====
+
+function allEqual(arr) {
+    if (arr.length < 2) return true;
+    const first = arr[0];
+    return arr.every(v => v === first);
+}
+
+function truncate(str, len) {
+    if (str.length <= len) return str;
+    return str.substring(0, len) + '...';
+}
+
+function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
+// ===== Finetune Functions =====
 
 async function loadFinetuneList() {
     try {
@@ -317,9 +728,13 @@ function createRunToggle() {
 function setupEventListeners() {
     const searchInput = document.getElementById('searchInput');
     const quantFilter = document.getElementById('quantFilter');
+    const detailedSearchInput = document.getElementById('detailedSearchInput');
+    const diffOnlyFilter = document.getElementById('diffOnlyFilter');
 
     if (searchInput) searchInput.addEventListener('input', () => updateTable());
     if (quantFilter) quantFilter.addEventListener('change', () => updateTable());
+    if (detailedSearchInput) detailedSearchInput.addEventListener('input', () => renderDetailedTable());
+    if (diffOnlyFilter) diffOnlyFilter.addEventListener('change', () => renderDetailedTable());
 
     document.querySelectorAll('.data-table th[data-sort]').forEach(th => {
         th.addEventListener('click', () => sortTable(th.dataset.sort));

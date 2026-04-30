@@ -16,6 +16,7 @@ import ast
 import re
 import shutil
 import tempfile
+import json
 from pathlib import Path
 
 app = Flask(__name__)
@@ -162,6 +163,169 @@ def get_train_logs():
         return jsonify({"success": True, "raw_text": raw_text, "train_metrics": train_metrics, "eval_metrics": eval_metrics})
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
+
+CUSTOM_TEST_TYPES = {
+    "accuracy_custom": {"file": "results.json", "items_key": "per_question", "item_fields": ["question", "expected_answer", "model_answer", "exact_match", "contains_match"]},
+    "coherence_custom": {"file": "results.json", "items_key": "per_prompt", "item_fields": ["prompt_id", "domain", "cosine_similarity", "generated_preview"]},
+    "tool_calling": {"file": "tool_results.json", "items_key": "results", "item_fields": ["prompt", "expected", "generated", "is_tool_correct", "params_present", "fully_correct"]},
+    "ocr_custom": {"file": "results.json", "items_key": "per_sample", "item_fields": ["image", "category", "question", "ground_truth", "model_response", "cer", "wer", "similarity", "exact_match", "contains_match"]},
+}
+
+DIR_RE = re.compile(r"^(?P<model>.+)_(?P<quant>base|int4|int8)_(?P<task>.+)$")
+DIR_RE_CUSTOM = re.compile(r"^(?P<model>.+)_(?P<quant>base|int4|int8)_(?P<test>accuracy_custom|coherence_custom|tool_calling|ocr_custom)$")
+
+LM_EVAL_TASK_FIELD_MAP = {
+    "gsm8k": {"question": "question", "answer": "answer", "model_answer_src": "filtered_resps"},
+    "gsm8k_tr": {"question": "question", "answer": "answer", "model_answer_src": "filtered_resps"},
+    "hendrycks_math": {"question": "problem", "answer": "solution", "model_answer_src": "filtered_resps"},
+    "arc_challenge": {"question": "question", "answer": "choices_text", "model_answer_src": "filtered_resps", "choices_key": "choices"},
+    "truthfulqa_mc2": {"question": "question", "answer": "target", "model_answer_src": "filtered_resps"},
+    "wikitext": {"question": "page", "answer": None, "model_answer_src": "filtered_resps"},
+}
+
+
+def _extract_lm_eval_sample(doc, task_name, filtered_resps, acc_value):
+    """Extract standardized fields from an lm_eval sample line."""
+    field_map = LM_EVAL_TASK_FIELD_MAP.get(task_name)
+    if field_map is None:
+        doc_keys = list(doc.keys()) if isinstance(doc, dict) else []
+        q_key = doc_keys[0] if doc_keys else None
+        return {
+            "question": str(doc.get(q_key, doc))[:500] if q_key else str(doc)[:500],
+            "expected_answer": "",
+            "model_answer": filtered_resps[0] if filtered_resps else "",
+            "acc": acc_value,
+        }
+
+    q_key = field_map["question"]
+    a_key = field_map["answer"]
+    question = doc.get(q_key, "")
+
+    if a_key and a_key == "choices_text" and field_map.get("choices_key"):
+        choices = doc.get(field_map["choices_key"], {})
+        if isinstance(choices, dict) and "text" in choices:
+            answer = choices["text"][doc.get("answer", 0)] if "answer" in doc else ""
+        else:
+            answer = ""
+    elif a_key:
+        answer = doc.get(a_key, "")
+    else:
+        answer = ""
+
+    model_answer = filtered_resps[0] if filtered_resps else ""
+
+    return {
+        "question": str(question)[:500],
+        "expected_answer": str(answer)[:500],
+        "model_answer": str(model_answer)[:500],
+        "acc": acc_value,
+    }
+
+
+def parse_lm_eval_sample_files(subdir, task_name, quant):
+    """Find and parse {task}_eval_samples.jsonl files in an lm_eval directory."""
+    results = []
+    for root, dirs, files in os.walk(subdir):
+        for fname in files:
+            if fname.endswith("_eval_samples.jsonl"):
+                file_path = os.path.join(root, fname)
+                try:
+                    with open(file_path, "r", encoding="utf-8") as f:
+                        for line in f:
+                            line = line.strip()
+                            if not line:
+                                continue
+                            sample = json.loads(line)
+                            doc = sample.get("doc", {})
+                            filtered_resps = sample.get("filtered_resps", [])
+                            target = sample.get("target", "")
+                            acc_value = sample.get("acc", 0)
+                            doc_id = sample.get("doc_id", "")
+
+                            extracted = _extract_lm_eval_sample(doc, task_name, filtered_resps, acc_value)
+                            results.append({
+                                "item_key": str(doc_id),
+                                "quant": quant,
+                                "data": extracted,
+                            })
+                except Exception:
+                    continue
+    return results
+
+
+def parse_detailed_results():
+    """Parse per-question/per-item data from custom test results and lm_eval sample files."""
+    if not RESULTS_DIR.exists():
+        return {}
+
+    aggregated = {}
+
+    for entry in sorted(os.listdir(RESULTS_DIR)):
+        subdir = os.path.join(RESULTS_DIR, entry)
+        if not os.path.isdir(subdir):
+            continue
+
+        m = DIR_RE.match(entry)
+        if not m:
+            continue
+
+        model = m.group("model")
+        quant = m.group("quant")
+        task_name = m.group("test") if "test" in m.groupdict() else m.group("task")
+
+        m_custom = DIR_RE_CUSTOM.match(entry)
+        if m_custom:
+            test_type = m_custom.group("test")
+            if test_type not in CUSTOM_TEST_TYPES:
+                continue
+            cfg = CUSTOM_TEST_TYPES[test_type]
+            json_file = os.path.join(subdir, cfg["file"])
+            if not os.path.exists(json_file):
+                continue
+            try:
+                with open(json_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+            except Exception:
+                continue
+
+            metrics = data.get("metrics", data)
+            items = metrics.get(cfg["items_key"])
+            if not items:
+                continue
+
+            aggregated.setdefault(model, {})
+            aggregated[model].setdefault(test_type, {})
+
+            for item in items:
+                item_key = item.get("question", item.get("prompt", item.get("prompt_id", item.get("image", ""))))
+                aggregated[model][test_type].setdefault(item_key, {})
+                aggregated[model][test_type][item_key][quant] = {
+                    field: item.get(field) for field in cfg["item_fields"]
+                }
+        else:
+            samples = parse_lm_eval_sample_files(subdir, task_name, quant)
+            if samples:
+                aggregated.setdefault(model, {})
+                aggregated[model].setdefault(task_name, {})
+                for sample in samples:
+                    ik = sample["item_key"]
+                    aggregated[model][task_name].setdefault(ik, {})
+                    aggregated[model][task_name][ik][quant] = sample["data"]
+
+    return aggregated
+
+
+@app.route('/api/detailed-results')
+def get_detailed_results():
+    """Return per-question/per-item results grouped by model, test type, and item."""
+    try:
+        detailed = parse_detailed_results()
+        if not detailed:
+            return jsonify({'success': False, 'message': 'No detailed custom test results found.', 'data': {}})
+        return jsonify({'success': True, 'data': detailed})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
 
 @app.route('/api/checkpoints')
 def get_checkpoints():

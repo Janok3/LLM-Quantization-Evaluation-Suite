@@ -513,12 +513,146 @@ body::before {
 .drop-medium { color: var(--warning-color); font-weight: 600; }
 .drop-high { color: var(--danger-color); font-weight: 700; }
 
+/* Detailed Answer Comparison Styles */
+.answer-correct { color: var(--success-color); font-weight: 600; }
+.answer-partial { color: var(--warning-color); font-weight: 600; }
+.answer-wrong { color: var(--danger-color); font-weight: 600; }
+.answer-na { color: var(--text-muted); }
+
+.row-has-diff { background: rgba(102, 126, 234, 0.05); }
+.row-has-diff:hover { background: rgba(102, 126, 234, 0.1); }
+
+.answer-cell {
+    max-width: 250px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: help;
+    position: relative;
+}
+
+.answer-cell:hover {
+    white-space: normal;
+    overflow: visible;
+}
+
+.answer-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    margin-left: 6px;
+    vertical-align: middle;
+}
+
+.badge-correct {
+    background: rgba(67, 233, 123, 0.2);
+    color: var(--success-color);
+    border: 1px solid rgba(67, 233, 123, 0.3);
+}
+
+.badge-partial {
+    background: rgba(251, 191, 36, 0.2);
+    color: var(--warning-color);
+    border: 1px solid rgba(251, 191, 36, 0.3);
+}
+
+.badge-wrong {
+    background: rgba(245, 101, 101, 0.2);
+    color: var(--danger-color);
+    border: 1px solid rgba(245, 101, 101, 0.3);
+}
+
+.badge-na {
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-muted);
+    border: 1px solid var(--border-color);
+}
+
+.filter-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    cursor: pointer;
+    padding: var(--spacing-sm) var(--spacing-md);
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    transition: all var(--transition-fast);
+}
+
+.filter-checkbox:hover {
+    border-color: var(--border-hover);
+}
+
+.filter-checkbox input[type="checkbox"] {
+    accent-color: #667eea;
+    width: 16px;
+    height: 16px;
+}
+
+.detailed-metric {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    margin-top: 2px;
+}
+
+.detailed-no-data {
+    text-align: center;
+    padding: 4rem 2rem;
+    color: var(--text-muted);
+}
+
+.detailed-no-data .icon {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+}
+
 .table-footer {
     padding: var(--spacing-md) var(--spacing-lg);
     background: var(--bg-tertiary);
     color: var(--text-muted);
     font-size: 0.9rem;
     border-top: 1px solid var(--border-color);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.pagination {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+}
+
+.pagination-btn {
+    padding: 0.4rem 1rem;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.pagination-btn:hover:not(:disabled) {
+    background: var(--primary-gradient);
+    color: white;
+    border-color: transparent;
+}
+
+.pagination-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.page-info {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
 }
 
 /* ===== Buttons ===== */
