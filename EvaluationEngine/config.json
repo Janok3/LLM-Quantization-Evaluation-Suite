@@ -1,6 +1,6 @@
 {
   "model": {
-    "id": "tiiuae/Falcon-H1-Tiny-90M-Base",
+    "id": ""Qwen/Qwen2.5-1.5B-Instruct,
     "trust_remote_code": true,
     "device_map": "auto"
   },
