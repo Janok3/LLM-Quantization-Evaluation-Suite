@@ -52,7 +52,7 @@ pip install trl peft
 pip install flask flask-cors pandas
 
 # Install custom test dependencies
-pip install Pillow sentence-transformers
+pip install Pillow sentence-transformers PyMuPDF qwen-vl-utils
 ```
 
 ---
