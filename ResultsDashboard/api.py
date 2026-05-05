@@ -23,7 +23,19 @@ app = Flask(__name__)
 CORS(app)
 
 BASE_DIR = Path(__file__).parent.resolve()
-RESULTS_DIR = BASE_DIR / "lm_eval_results"
+
+def find_results_dir():
+    """Auto-detect lm_eval_results directory from common locations."""
+    candidates = [
+        BASE_DIR / "lm_eval_results",
+        BASE_DIR.parent / "EvaluationEngine" / "lm_eval_results",
+    ]
+    for d in candidates:
+        if d.exists() and any(d.iterdir()):
+            return d
+    return candidates[0]
+
+RESULTS_DIR = find_results_dir()
 PARSED_DIR = BASE_DIR / "parsed"
 PARSER_SCRIPT = BASE_DIR / "parse_lm_eval_results.py"
 
