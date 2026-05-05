@@ -27,7 +27,7 @@ vim EvaluationEngine/config.json
 # 2. Run evaluations
 cd EvaluationEngine && ./submit_quant_tests.sh
 
-# 3. View results
+# 3. View results (auto-detects results from EvaluationEngine/ or ResultsDashboard/)
 cd ResultsDashboard && ./run_dashboard.sh
 ```
 
@@ -174,11 +174,36 @@ Dataset files go in `EvaluationEngine/datasets/`. Supported formats: `.jsonl`, `
 |----------|-------------|
 | `GET /api/data` | All benchmark results |
 | `GET /api/models` | Evaluated models |
+| `GET /api/detailed-results` | Per-question comparison across quantization levels |
 | `GET /api/checkpoints` | Found checkpoints/adapters |
 | `GET /api/download_model?folder=...` | Download checkpoint as zip |
 | `POST /api/parse` | Re-run results parser |
 
-Results must be in `ResultsDashboard/lm_eval_results/` in the format `{model}_{quant}_{task}/` containing `results.json` files.
+**Results Location:** The dashboard auto-detects `lm_eval_results/` in this order:
+1. `ResultsDashboard/lm_eval_results/` (if present)
+2. `../EvaluationEngine/lm_eval_results/` (auto-detected)
+
+No manual copying required - just run `./run_dashboard.sh` after evaluation completes.
+
+---
+
+## Question Analysis Tab
+
+The dashboard includes a **"Question Analysis"** tab that shows per-question results across quantization levels (Base/INT8/INT4).
+
+### Features:
+- **Custom Tests:** Q&A Accuracy, Coherence, Tool Calling, OCR
+- **lm_eval Benchmarks:** GSM8K, ARC Challenge, TruthfulQA, Hendrycks Math, WikiText
+- **Per-question comparison:** See exact answers for each quantization level
+- **Diff highlighting:** Rows highlight where answers differ across quantization levels
+- **"Show differences only"** checkbox to filter rows with differing answers
+- **✓/✗ badges** show correct/wrong per quantization level
+
+### Usage:
+1. Click **"Question Analysis"** tab
+2. Select your model
+3. Select test type (e.g., "GSM8K", "Q&A Accuracy")
+4. View per-question comparison table with Base/INT8/INT4 answers
 
 ---
 
