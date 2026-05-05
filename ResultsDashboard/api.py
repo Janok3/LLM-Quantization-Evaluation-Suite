@@ -223,11 +223,11 @@ def _extract_lm_eval_sample(doc, task_name, filtered_resps, acc_value):
 
 
 def parse_lm_eval_sample_files(subdir, task_name, quant):
-    """Find and parse {task}_eval_samples.jsonl files in an lm_eval directory."""
+    """Find and parse samples_{task}_{timestamp}.jsonl files in an lm_eval directory."""
     results = []
     for root, dirs, files in os.walk(subdir):
         for fname in files:
-            if fname.endswith("_eval_samples.jsonl"):
+            if fname.startswith("samples_") and fname.endswith(".jsonl"):
                 file_path = os.path.join(root, fname)
                 try:
                     with open(file_path, "r", encoding="utf-8") as f:

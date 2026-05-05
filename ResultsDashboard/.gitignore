@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+venv/
+.venv/
+env/
+
+# Generated CSV files (regenerated from lm_eval_results)
+parsed/
+lm_eval_results/**
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db

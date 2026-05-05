@@ -136,7 +136,25 @@ def parse_one_results_json(
 ) -> List[LongRow]:
     data = load_json(json_path)
 
-    results: Dict[str, Dict[str, Any]] = data.get("results", {}) or {}
+    # Skip custom test results (they have different format with test_name, metrics, per_question, etc.)
+    if "test_name" in data or "per_question" in data or "per_prompt" in data or "per_sample" in data:
+        return []
+
+    results = data.get("results")
+    
+    # Handle case where results is None or empty
+    if results is None:
+        return []
+    
+    # Handle list format (if results is a list instead of dict)
+    if isinstance(results, list):
+        # List format - would need different handling, but skip for now
+        return []
+    
+    # Ensure results is a dict
+    if not isinstance(results, dict):
+        return []
+    
     nshot_map = data.get("n-shot", {}) or {}
     nsamples_map = data.get("n-samples", {}) or {}
 

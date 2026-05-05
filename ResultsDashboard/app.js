@@ -59,20 +59,15 @@ async function loadData() {
         showLoading();
         const response = await fetch(`${API_BASE}/data`);
 
+        allData = [];
         if (!response.ok) {
-            document.getElementById('dashboard').innerHTML = `
-                <div style="text-align:center; padding: 4rem; margin-top: 2rem;">
-                    <div style="font-size: 3rem; margin-bottom: 1rem;">📭</div>
-                    <h2 style="color: var(--text-primary)">No Evaluation Data Found</h2>
-                    <p style="color: var(--text-muted)">Could not find valid CSV data. You can still check Training Logs.</p>
-                </div>`;
-            hideLoading();
-            return;
+            console.log('No CSV data found, trying detailed results only...');
+        } else {
+            const result = await response.json();
+            allData = result.data || [];
         }
 
-        const result = await response.json();
-        allData = result.data || [];
-
+        // ALWAYS try to load detailed results
         const detailedResponse = await fetch(`${API_BASE}/detailed-results`);
         if (detailedResponse.ok) {
             const detailedResult = await detailedResponse.json();
@@ -81,28 +76,35 @@ async function loadData() {
             }
         }
 
-        const models = [...new Set(allData.map(row => row.model))];
+        // Get models from either source
+        let models = Array.from(new Set(allData.map(row => row.model)));
+        if (models.length === 0 && Object.keys(detailedResults).length > 0) {
+            models = Object.keys(detailedResults);
+        }
 
-        models.forEach(model => {
-            const modelRows = allData.filter(row => row.model === model);
-            const groups = {};
-            modelRows.forEach(row => {
-                const key = `${row.task_key}|${row.quant_method}`;
-                if (!groups[key]) groups[key] = 0;
-                groups[key]++;
+        // Only compute iterations if we have CSV data
+        if (allData.length > 0) {
+            models.forEach(model => {
+                const modelRows = allData.filter(row => row.model === model);
+                const groups = {};
+                modelRows.forEach(row => {
+                    const key = `${row.task_key}|${row.quant_method}`;
+                    if (!groups[key]) groups[key] = 0;
+                    groups[key]++;
+                });
+
+                const counts = Object.values(groups);
+                iterationsByModel[model] = counts.length > 0 ? Math.max(...counts) : 0;
             });
-
-            const counts = Object.values(groups);
-            iterationsByModel[model] = counts.length > 0 ? Math.max(...counts) : 0;
-        });
+        }
 
         availableModels = models.sort();
 
         if (availableModels.length === 0) {
             document.getElementById('dashboard').innerHTML = `
                 <div style="text-align:center; padding: 4rem; margin-top: 2rem;">
-                    <h2 style="color: var(--text-primary)">No Models Extracted</h2>
-                    <p style="color: var(--text-muted)">The CSV files were found but no models could be identified.</p>
+                    <h2 style="color: var(--text-primary)">No Evaluation Data Found</h2>
+                    <p style="color: var(--text-muted)">Could not find valid CSV data. You can still check Training Logs or Question Analysis tab.</p>
                 </div>`;
             hideLoading();
             return;
@@ -485,6 +487,71 @@ function buildDetailedRows(itemKeys, items, testType) {
 
             const respValues = Object.values(responses);
             row._hasDiff = respValues.length >= 2 && !allEqual(respValues);
+
+            return row;
+        });
+
+        return { columns, rows };
+    }
+
+    if (LM_EVAL_TASKS.has(testType)) {
+        const columns = [
+            { label: 'Q ID', key: '_doc_id', type: 'text' },
+            { label: 'Question', key: '_question', type: 'text' },
+            { label: 'Expected', key: '_expected', type: 'text' },
+            { label: 'Base Answer', key: 'base_answer', type: 'answer' },
+            { label: 'INT8 Answer', key: 'int8_answer', type: 'answer' },
+            { label: 'INT4 Answer', key: 'int4_answer', type: 'answer' },
+            { label: 'Base', key: 'base_badge', type: 'badge' },
+            { label: 'INT8', key: 'int8_badge', type: 'badge' },
+            { label: 'INT4', key: 'int4_badge', type: 'badge' },
+        ];
+
+        const rows = itemKeys.map(itemKey => {
+            const itemData = items[itemKey];
+            const row = {
+                _doc_id: itemKey,
+                _question: '',
+                _expected: '',
+                _searchText: '',
+                _hasDiff: false
+            };
+
+            for (const q of quants) {
+                const qd = itemData[q];
+                if (qd) {
+                    row._question = qd.question || '';
+                    row._expected = qd.expected_answer || '';
+                    break;
+                }
+            }
+
+            row._searchText = itemKey + ' ' + row._question + ' ' + row._expected;
+
+            let answers = [];
+            quants.forEach(q => {
+                const qd = itemData[q];
+                if (qd) {
+                    row[`${q}_answer`] = qd.model_answer || '';
+                    if (qd.acc !== undefined) {
+                        if (qd.acc) {
+                            row[`${q}_badge`] = `<span class="answer-badge badge-correct">✓ Correct</span>`;
+                        } else {
+                            row[`${q}_badge`] = `<span class="answer-badge badge-wrong">✗ Wrong</span>`;
+                        }
+                    } else {
+                        row[`${q}_badge`] = '-';
+                    }
+                    answers.push(qd.model_answer || '');
+                    row._searchText += ' ' + (qd.model_answer || '');
+                } else {
+                    row[`${q}_answer`] = '';
+                    row[`${q}_badge`] = '';
+                }
+            });
+
+            const validAnswers = answers.filter(a => a !== '');
+            row._hasDiff = validAnswers.length >= 2 && !allEqual(validAnswers);
 
             return row;
         });
