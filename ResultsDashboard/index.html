@@ -25,6 +25,9 @@
             <button class="tab-btn active" onclick="switchTab(event, 'dashboard')">
                 <span class="section-icon">📊</span> Eval Dashboard
             </button>
+            <button class="tab-btn" onclick="switchTab(event, 'detailed')">
+                <span class="section-icon">🔍</span> Question Analysis
+            </button>
             <button class="tab-btn" onclick="switchTab(event, 'train')">
                 <span class="section-icon">📈</span> Training Logs
             </button>
@@ -102,6 +105,50 @@
                     </div>
                     <div class="table-footer">
                         <div class="row-count" id="rowCount">Showing 0 rows</div>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <main class="dashboard tab-content" id="detailedDashboard" style="display: none;">
+            <section class="model-selector-section">
+                <div class="selector-card">
+                    <h2><span class="section-icon">🤖</span> Select Model</h2>
+                    <div id="detailedModelToggle" class="model-toggle"></div>
+                </div>
+            </section>
+
+            <section class="model-selector-section">
+                <div class="selector-card">
+                    <h2><span class="section-icon">🧪</span> Select Test Type</h2>
+                    <div id="testTypeToggle" class="model-toggle"></div>
+                </div>
+            </section>
+
+            <section class="table-section">
+                <div class="table-card">
+                    <div class="table-header">
+                        <h3><span class="section-icon">📋</span> Per-Question Comparison</h3>
+                        <div class="table-controls">
+                            <input type="text" id="detailedSearchInput" placeholder="Search questions..." class="search-input">
+                            <label class="filter-checkbox">
+                                <input type="checkbox" id="diffOnlyFilter"> Show differences only
+                            </label>
+                        </div>
+                    </div>
+                    <div class="table-wrapper">
+                        <table class="data-table" id="detailedTable">
+                            <thead id="detailedTableHead"></thead>
+                            <tbody id="detailedTableBody"></tbody>
+                        </table>
+                    </div>
+                    <div class="table-footer">
+                        <div class="row-count" id="detailedRowCount">Showing 0 rows</div>
+                        <div class="pagination" id="paginationControls">
+                            <button class="pagination-btn" id="prevPageBtn" onclick="detailedPrevPage()" disabled>&laquo; Prev</button>
+                            <span class="page-info" id="pageInfo">Page 1 of 1</span>
+                            <button class="pagination-btn" id="nextPageBtn" onclick="detailedNextPage()">Next &raquo;</button>
+                        </div>
                     </div>
                 </div>
             </section>

@@ -7,8 +7,9 @@ venv/
 env/
 
 # Logs and results
-logs/
-lm_eval_results/
+EvaluationEngine/logs/
+EvaluationEngine/lm_eval_results/**
+!EvaluationEngine/lm_eval_results/.gitkeep
 failed_nodes.txt
 .tasks_to_run
 
@@ -22,4 +23,5 @@ Thumbs.db
 
 # Models (if downloaded)
 download_model/
-finetunes/
+ResultsDashboard/finetunes/**
+!ResultsDashboard/finetunes/.gitkeep
