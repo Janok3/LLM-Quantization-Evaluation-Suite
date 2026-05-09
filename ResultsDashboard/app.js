@@ -1057,10 +1057,11 @@ function renderSensitivityChart(modelData, quantMethod, elementId, label) {
         if (quantized === undefined || isNaN(quantized)) return;
 
         const lowerIsBetter = LOWER_IS_BETTER_METRICS.has(quants.primary_metric);
-        // For lower-is-better: positive drop = quantized got worse (higher value)
-        const drop = lowerIsBetter
-            ? ((quantized - base) / base) * 100
-            : ((base - quantized) / base) * 100;
+        // Use the same retention formula as the bar chart: drop = 100 - (% of base retained).
+        // This bounds drop at 100% for all metric types, so e.g. perplexity doubling = 52% drop,
+        // not 109% (which the naive relative-change formula would give).
+        const retention = lowerIsBetter ? (base / quantized) * 100 : (quantized / base) * 100;
+        const drop = 100 - retention;
         sensitivities.push({ task, drop });
     });
 
@@ -1091,7 +1092,7 @@ function renderSensitivityChart(modelData, quantMethod, elementId, label) {
         options: {
             indexAxis: 'y', responsive: true, maintainAspectRatio: true,
             plugins: { legend: { display: false }, tooltip: { callbacks: { label: (context) => `Drop: ${context.parsed.x.toFixed(2)}%` } } },
-            scales: { x: { ticks: { color: '#b8b8d1', callback: (value) => value + '%' }, grid: { color: 'rgba(255, 255, 255, 0.05)' } }, y: { ticks: { color: '#b8b8d1' }, grid: { display: false } } }
+            scales: { x: { min: Math.min(0, Math.floor(Math.min(...top.map(s => s.drop)) / 10) * 10), max: 100, ticks: { color: '#b8b8d1', callback: (value) => value + '%' }, grid: { color: 'rgba(255, 255, 255, 0.05)' } }, y: { ticks: { color: '#b8b8d1' }, grid: { display: false } } }
         }
     });
 }
