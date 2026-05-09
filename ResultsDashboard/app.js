@@ -138,6 +138,13 @@ const TEST_TYPE_LABELS = {
 
 const LM_EVAL_TASKS = new Set(['gsm8k', 'gsm8k_tr', 'arc_challenge', 'truthfulqa_mc2', 'hendrycks_math', 'wikitext']);
 
+// Metrics where lower = better (perplexity-style). Affects drop-direction calculation.
+const LOWER_IS_BETTER_METRICS = new Set(['word_perplexity', 'byte_perplexity', 'bits_per_byte', 'perplexity']);
+
+// Metrics that are raw numbers, not 0-1 fractions — shown as-is, not multiplied by 100.
+// Superset of LOWER_IS_BETTER_METRICS (throughput is higher-is-better but still a raw value).
+const RAW_VALUE_METRICS = new Set([...LOWER_IS_BETTER_METRICS, 'throughput_tokens_per_sec']);
+
 let detailedPage = 1;
 let detailedTotalPages = 1;
 const detailedPageSize = 50;
@@ -808,37 +815,66 @@ function setupEventListeners() {
     });
 }
 
-function aggregateMMLU(data) {
-    const aggregated = [];
-    const mmluData = { base: [], int8: [], int4: [] };
-    const nonMmluData = [];
+// Subtask families: { prefix, parent, metric }
+// If the parent task row is present in the data, subtasks are dropped.
+// If the parent is absent, subtasks are averaged into a synthetic parent row.
+const SUBTASK_FAMILIES = [
+    { prefix: 'mmlu_',           parent: 'mmlu',           parentLabel: 'MMLU',           metric: 'acc' },
+    { prefix: 'hendrycks_math_', parent: 'hendrycks_math', parentLabel: 'hendrycks_math', metric: 'exact_match' },
+];
+
+function aggregateSubtasks(data) {
+    const presentTasks = new Set(data.map(row => row.task_key));
+    const subtaskBuckets = {};  // family.parent -> { quant: [values] }
+    const filtered = [];
 
     data.forEach(row => {
         const task = row.task_key;
-        if (task.startsWith('mmlu_') && task !== 'mmlu') {
-            const quant = row.quant_method;
-            const value = parseFloat(row.primary_value);
-            if (!isNaN(value) && mmluData[quant]) mmluData[quant].push(value);
-        } else {
-            nonMmluData.push(row);
+        let isSubtask = false;
+
+        for (const family of SUBTASK_FAMILIES) {
+            if (task.startsWith(family.prefix) && task !== family.parent) {
+                isSubtask = true;
+                // If the parent row already exists, just drop the subtask row.
+                // If not, accumulate for averaging.
+                if (!presentTasks.has(family.parent)) {
+                    if (!subtaskBuckets[family.parent]) subtaskBuckets[family.parent] = {};
+                    const quant = row.quant_method;
+                    if (!subtaskBuckets[family.parent][quant]) subtaskBuckets[family.parent][quant] = [];
+                    const value = parseFloat(row.primary_value);
+                    if (!isNaN(value)) subtaskBuckets[family.parent][quant].push(value);
+                }
+                break;
+            }
         }
+
+        if (!isSubtask) filtered.push(row);
     });
 
-    ['base', 'int8', 'int4'].forEach(quant => {
-        if (mmluData[quant].length > 0) {
-            const avgValue = mmluData[quant].reduce((a, b) => a + b, 0) / mmluData[quant].length;
-            aggregated.push({
-                model: data[0]?.model || '',
-                quant_method: quant,
-                task_key: 'MMLU',
-                primary_value: avgValue,
-                primary_metric: 'acc'
-            });
-        }
-    });
+    // Emit synthetic parent rows for families whose parent was absent
+    const aggregated = [];
+    for (const family of SUBTASK_FAMILIES) {
+        const bucket = subtaskBuckets[family.parent];
+        if (!bucket) continue;
+        ['base', 'int8', 'int4'].forEach(quant => {
+            const values = bucket[quant];
+            if (values && values.length > 0) {
+                aggregated.push({
+                    model: data[0]?.model || '',
+                    quant_method: quant,
+                    task_key: family.parentLabel,
+                    primary_value: values.reduce((a, b) => a + b, 0) / values.length,
+                    primary_metric: family.metric,
+                });
+            }
+        });
+    }
 
-    return [...nonMmluData, ...aggregated];
+    return [...filtered, ...aggregated];
 }
+
+// Keep old name as alias so nothing else breaks if it's referenced elsewhere
+function aggregateMMLU(data) { return aggregateSubtasks(data); }
 
 function updateDashboard() {
     if (!currentModel) return;
@@ -865,7 +901,7 @@ function updateDashboard() {
         if (item) filteredRows.push(item);
     });
 
-    const aggregatedData = aggregateMMLU(filteredRows);
+    const aggregatedData = aggregateSubtasks(filteredRows);
 
     updateCharts(aggregatedData);
     updateTable(aggregatedData);
@@ -931,20 +967,34 @@ function renderQuantizationImpactChart(modelData) {
         const task = row.task_key;
         const quant = row.quant_method;
         const value = parseFloat(row.primary_value);
-        if (!taskData[task]) taskData[task] = {};
+        if (!taskData[task]) taskData[task] = { primary_metric: row.primary_metric || '' };
         taskData[task][quant] = value;
     });
 
+    // Compute "% of base retained" so every metric is on the same 0-100+ scale regardless of direction.
+    // For accuracy (higher=better): val/base * 100.
+    // For lower-is-better (e.g. bits_per_byte): base/val * 100.
+    // Throughput is excluded — it's a speed metric with opposite degradation semantics.
+    const retentionPct = (base, val, metric) => {
+        if (!base || val === undefined || isNaN(val)) return null;
+        return LOWER_IS_BETTER_METRICS.has(metric) ? (base / val) * 100 : (val / base) * 100;
+    };
+
     const tasks = Object.entries(taskData)
-        .filter(([_, quants]) => quants.base)
-        .sort((a, b) => (b[1].base || 0) - (a[1].base || 0))
+        .filter(([_, d]) => d.base > 0 && d.primary_metric !== 'throughput_tokens_per_sec')
+        .sort((a, b) => {
+            // Sort by INT4 retention ascending so most-degraded tasks appear first
+            const ra = retentionPct(a[1].base, a[1].int4, a[1].primary_metric) ?? 100;
+            const rb = retentionPct(b[1].base, b[1].int4, b[1].primary_metric) ?? 100;
+            return ra - rb;
+        })
         .slice(0, 10)
         .map(([task]) => task);
 
     const datasets = [
-        { label: 'Base', data: tasks.map(task => taskData[task].base || 0), backgroundColor: 'rgba(67, 233, 123, 0.8)', borderColor: 'rgba(67, 233, 123, 1)', borderWidth: 2, borderRadius: 8 },
-        { label: 'INT8', data: tasks.map(task => taskData[task].int8 || 0), backgroundColor: 'rgba(79, 172, 254, 0.8)', borderColor: 'rgba(79, 172, 254, 1)', borderWidth: 2, borderRadius: 8 },
-        { label: 'INT4', data: tasks.map(task => taskData[task].int4 || 0), backgroundColor: 'rgba(240, 147, 251, 0.8)', borderColor: 'rgba(240, 147, 251, 1)', borderWidth: 2, borderRadius: 8 }
+        { label: 'Base',  data: tasks.map(() => 100), backgroundColor: 'rgba(67, 233, 123, 0.8)', borderColor: 'rgba(67, 233, 123, 1)', borderWidth: 2, borderRadius: 8 },
+        { label: 'INT8',  data: tasks.map(t => retentionPct(taskData[t].base, taskData[t].int8, taskData[t].primary_metric)), backgroundColor: 'rgba(79, 172, 254, 0.8)', borderColor: 'rgba(79, 172, 254, 1)', borderWidth: 2, borderRadius: 8 },
+        { label: 'INT4',  data: tasks.map(t => retentionPct(taskData[t].base, taskData[t].int4, taskData[t].primary_metric)), backgroundColor: 'rgba(240, 147, 251, 0.8)', borderColor: 'rgba(240, 147, 251, 1)', borderWidth: 2, borderRadius: 8 },
     ];
 
     if (charts.quantizationImpact) charts.quantizationImpact.destroy();
@@ -957,10 +1007,22 @@ function renderQuantizationImpactChart(modelData) {
             maintainAspectRatio: true,
             plugins: {
                 legend: { labels: { color: '#b8b8d1', padding: 20 } },
-                tooltip: { callbacks: { label: (context) => `${context.dataset.label}: ${(context.parsed.y * 100).toFixed(2)}%` } }
+                tooltip: {
+                    callbacks: {
+                        label: (context) => {
+                            const v = context.parsed.y;
+                            if (v === null || isNaN(v)) return '';
+                            return `${context.dataset.label}: ${v.toFixed(1)}% of base`;
+                        }
+                    }
+                }
             },
             scales: {
-                y: { beginAtZero: true, grid: { color: 'rgba(255, 255, 255, 0.05)' }, ticks: { color: '#b8b8d1', callback: (value) => (value * 100).toFixed(0) + '%' } },
+                y: {
+                    beginAtZero: true,
+                    grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                    ticks: { color: '#b8b8d1', callback: (value) => value.toFixed(0) + '%' }
+                },
                 x: { grid: { display: false }, ticks: { color: '#b8b8d1', maxRotation: 45, minRotation: 45 } }
             }
         }
@@ -976,17 +1038,30 @@ function renderSensitivityChart(modelData, quantMethod, elementId, label) {
         const task = row.task_key;
         const quant = row.quant_method;
         const value = parseFloat(row.primary_value);
-        if (!taskData[task]) taskData[task] = {};
+        if (!taskData[task]) taskData[task] = { primary_metric: row.primary_metric || '' };
         taskData[task][quant] = value;
     });
 
     const sensitivities = [];
     Object.entries(taskData).forEach(([task, quants]) => {
-        const base = quants.base || 0;
+        // Exclude throughput — it's a speed metric, not a quality benchmark,
+        // and its direction semantics differ (negative drop = faster = good).
+        if (quants.primary_metric === 'throughput_tokens_per_sec') return;
+
+        const base = quants.base;
         const quantized = quants[quantMethod];
-        if (base > 0 && quantized) {
-            sensitivities.push({ task, drop: ((base - quantized) / base) * 100 });
-        }
+
+        // Require a valid, non-zero base (can't compute % drop from 0).
+        // Use explicit undefined/NaN checks so a quantized value of 0.0 (total collapse) is included.
+        if (base === undefined || isNaN(base) || base === 0) return;
+        if (quantized === undefined || isNaN(quantized)) return;
+
+        const lowerIsBetter = LOWER_IS_BETTER_METRICS.has(quants.primary_metric);
+        // For lower-is-better: positive drop = quantized got worse (higher value)
+        const drop = lowerIsBetter
+            ? ((quantized - base) / base) * 100
+            : ((base - quantized) / base) * 100;
+        sensitivities.push({ task, drop });
     });
 
     sensitivities.sort((a, b) => b.drop - a.drop);
@@ -1024,7 +1099,7 @@ function renderSensitivityChart(modelData, quantMethod, elementId, label) {
 function updateTable(modelData) {
     if (!modelData) {
         modelData = allData.filter(row => row.model === currentModel);
-        modelData = aggregateMMLU(modelData);
+        modelData = aggregateSubtasks(modelData);
     }
 
     const taskData = {};
@@ -1033,14 +1108,21 @@ function updateTable(modelData) {
         const quant = row.quant_method;
         if (!taskData[task]) taskData[task] = { task_key: task };
         taskData[task][quant] = parseFloat(row.primary_value);
+        if (!taskData[task].primary_metric) taskData[task].primary_metric = row.primary_metric || '';
     });
 
     tableData = Object.values(taskData).map(row => {
         const base = row.base || 0;
         const int8 = row.int8 || 0;
         const int4 = row.int4 || 0;
+        const metric = row.primary_metric || '';
+        const lowerIsBetter = LOWER_IS_BETTER_METRICS.has(metric);
+        // For lower-is-better (perplexity): drop = (quantized - base) / base * 100 so positive = got worse
+        const int8Drop = base > 0 ? (lowerIsBetter ? (int8 - base) : (base - int8)) / base * 100 : 0;
+        const int4Drop = base > 0 ? (lowerIsBetter ? (int4 - base) : (base - int4)) / base * 100 : 0;
         return {
-            task_key: row.task_key, base: base, int8: int8, int8_drop: base > 0 ? ((base - int8) / base) * 100 : 0, int4: int4, int4_drop: base > 0 ? ((base - int4) / base) * 100 : 0
+            task_key: row.task_key, primary_metric: metric,
+            base, int8, int8_drop: int8Drop, int4, int4_drop: int4Drop
         };
     });
 
@@ -1066,10 +1148,10 @@ function renderTable(data) {
 
         tr.innerHTML = `
             <td><strong>${row.task_key}</strong></td>
-            <td>${formatPercentage(row.base)}</td>
-            <td>${formatPercentage(row.int8)}</td>
+            <td>${formatValue(row.base, row.primary_metric)}</td>
+            <td>${formatValue(row.int8, row.primary_metric)}</td>
             <td class="${int8Class}">${row.int8_drop.toFixed(2)}%</td>
-            <td>${formatPercentage(row.int4)}</td>
+            <td>${formatValue(row.int4, row.primary_metric)}</td>
             <td class="${int4Class}">${row.int4_drop.toFixed(2)}%</td>
         `;
         tbody.appendChild(tr);
@@ -1106,4 +1188,10 @@ function populateFilters() {
 
 function formatPercentage(value) {
     return (value === null || value === undefined || isNaN(value)) ? '-' : (value * 100).toFixed(2) + '%';
+}
+
+function formatValue(value, metricName) {
+    if (value === null || value === undefined || isNaN(value)) return '-';
+    if (RAW_VALUE_METRICS.has(metricName)) return parseFloat(value).toFixed(2);
+    return (value * 100).toFixed(2) + '%';
 }

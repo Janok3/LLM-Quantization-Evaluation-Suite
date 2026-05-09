@@ -124,10 +124,11 @@ def get_all_data():
 @app.route('/api/models')
 def get_models():
     response = get_all_data()
-    if response[1] != 200 if isinstance(response, tuple) else response.status_code != 200:
+    if isinstance(response, tuple):
         return jsonify({'success': False, 'models': []})
-    
-    data = response[0].json['data'] if isinstance(response, tuple) else response.json['data']
+    if response.status_code != 200:
+        return jsonify({'success': False, 'models': []})
+    data = response.get_json().get('data', [])
     models = sorted(list(set(row['model'] for row in data if row.get('model'))))
     return jsonify({'success': True, 'models': models})
 
