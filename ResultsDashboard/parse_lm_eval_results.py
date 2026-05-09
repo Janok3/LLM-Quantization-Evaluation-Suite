@@ -127,6 +127,45 @@ class LongRow:
     n_samples_effective: Optional[int]
 
 
+# Maps task_from_dir name → how to extract the single summary metric.
+# scale: multiply raw value by this before storing (e.g. 0-100 pct → 0-1 fraction).
+CUSTOM_METRIC_EXTRACTORS: Dict[str, Dict] = {
+    "accuracy_custom":  {"metric": "exact_match_accuracy", "extract": lambda d: d.get("metrics", {}).get("exact_match_accuracy_pct"), "scale": 0.01},
+    "coherence_custom": {"metric": "avg_coherence",        "extract": lambda d: d.get("metrics", {}).get("avg_coherence"),             "scale": 1.0},
+    "tool_calling":     {"metric": "tool_accuracy",        "extract": lambda d: d.get("accuracy"),                                     "scale": 1.0},
+    "perplexity_custom":{"metric": "perplexity",           "extract": lambda d: d.get("metrics", {}).get("perplexity"),                "scale": 1.0},
+    "throughput_custom":{"metric": "throughput_tokens_per_sec", "extract": lambda d: d.get("metrics", {}).get("overall_avg_throughput_tokens_per_sec"), "scale": 1.0},
+}
+
+
+def parse_custom_test_json(
+    json_path: str,
+    model: str,
+    quant: str,
+    task_from_dir: str,
+    source_dir: str,
+) -> List[LongRow]:
+    cfg = CUSTOM_METRIC_EXTRACTORS.get(task_from_dir)
+    if cfg is None:
+        return []
+    data = load_json(json_path)
+    try:
+        raw = cfg["extract"](data)
+    except Exception:
+        return []
+    if raw is None or not isinstance(raw, (int, float)):
+        return []
+    return [LongRow(
+        model=model, quant_method=quant,
+        task_from_dir=task_from_dir, task_key=task_from_dir,
+        parent_task=None, source_dir=source_dir,
+        source_file=os.path.basename(json_path),
+        metric=cfg["metric"], variant=None,
+        value=float(raw) * cfg["scale"],
+        stderr=None, n_shot=None, n_samples_effective=None,
+    )]
+
+
 def parse_one_results_json(
     json_path: str,
     model: str,
@@ -136,7 +175,7 @@ def parse_one_results_json(
 ) -> List[LongRow]:
     data = load_json(json_path)
 
-    # Skip custom test results (they have different format with test_name, metrics, per_question, etc.)
+    # Skip custom test results — handled by parse_custom_test_json instead
     if "test_name" in data or "per_question" in data or "per_prompt" in data or "per_sample" in data:
         return []
 
@@ -165,8 +204,11 @@ def parse_one_results_json(
         if not isinstance(task_metrics, dict):
             continue
 
-        parent_task = "mmlu" if task_key.startswith("mmlu_") else None
-        if task_key == "mmlu":
+        if task_key.startswith("mmlu_") and task_key != "mmlu":
+            parent_task = "mmlu"
+        elif task_key.startswith("hendrycks_math_"):
+            parent_task = "hendrycks_math"
+        else:
             parent_task = None
 
         numeric: Dict[Tuple[str, Optional[str]], float] = {}
@@ -353,6 +395,8 @@ def main() -> None:
 
         for jp in jsons:
             rows = parse_one_results_json(jp, model, quant, task_from_dir, source_dir=entry)
+            if not rows:
+                rows = parse_custom_test_json(jp, model, quant, task_from_dir, source_dir=entry)
             if rows:
                 per_model.setdefault(model, []).extend(rows)
 
