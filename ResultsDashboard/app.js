@@ -801,12 +801,10 @@ function createRunToggle() {
 
 function setupEventListeners() {
     const searchInput = document.getElementById('searchInput');
-    const quantFilter = document.getElementById('quantFilter');
     const detailedSearchInput = document.getElementById('detailedSearchInput');
     const diffOnlyFilter = document.getElementById('diffOnlyFilter');
 
     if (searchInput) searchInput.addEventListener('input', () => updateTable());
-    if (quantFilter) quantFilter.addEventListener('change', () => updateTable());
     if (detailedSearchInput) detailedSearchInput.addEventListener('input', () => renderDetailedTable());
     if (diffOnlyFilter) diffOnlyFilter.addEventListener('change', () => renderDetailedTable());
 
@@ -905,7 +903,6 @@ function updateDashboard() {
 
     updateCharts(aggregatedData);
     updateTable(aggregatedData);
-    populateFilters();
 }
 
 // ===== Charts =====
@@ -1128,10 +1125,9 @@ function updateTable(modelData) {
     });
 
     const searchTerm = document.getElementById('searchInput')?.value.toLowerCase() || '';
-    const quantFilter = document.getElementById('quantFilter')?.value || '';
 
     let filtered = tableData.filter(row => {
-        return (!searchTerm || row.task_key.toLowerCase().includes(searchTerm)) && (!quantFilter || row[quantFilter] > 0);
+        return !searchTerm || row.task_key.toLowerCase().includes(searchTerm);
     });
 
     renderTable(filtered);
@@ -1175,17 +1171,6 @@ function sortTable(column) {
     updateTable();
 }
 
-function populateFilters() {
-    const quantFilter = document.getElementById('quantFilter');
-    if (!quantFilter || quantFilter.options.length > 1) return;
-
-    ['base', 'int8', 'int4'].forEach(q => {
-        const option = document.createElement('option');
-        option.value = q;
-        option.textContent = q.toUpperCase();
-        quantFilter.appendChild(option);
-    });
-}
 
 function formatPercentage(value) {
     return (value === null || value === undefined || isNaN(value)) ? '-' : (value * 100).toFixed(2) + '%';
